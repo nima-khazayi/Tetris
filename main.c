@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "raylib.h"
 #include "init/menu.h"
+#include "init/globals.h"
 
 #define STAR_COUNT 300
 
@@ -15,8 +16,8 @@ typedef struct {
 
 
 Star stars[STAR_COUNT];
-int screenWidth = 1800;
-int screenHeight = 900;
+int screenWidth = 1920;
+int screenHeight = 1080;
 
 int activeStars = 0;
 float spawnTimer = 0.0f;
@@ -24,9 +25,12 @@ float spawnInterval = 0.02f; // seconds between spawns (adjust for faster/slower
 
 Texture2D starTextures[4];  // Array of star images
 
+bool shouldExit = false; // Global variable
+
 int main() {
     
     InitWindow(screenWidth, screenHeight, "TeTRo");
+    ToggleFullscreen();
 
     starTextures[0] = LoadTexture("templates/1.png");
     starTextures[1] = LoadTexture("templates/2.png");
@@ -74,7 +78,10 @@ int main() {
         }
 
         if (activeStars >= STAR_COUNT) {
-            initializer();
+            // Call initializer and check if exit is requested
+            if (initializer() == 1) {
+                break;
+            }
         }
 
         EndDrawing();
