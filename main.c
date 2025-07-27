@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "raylib.h"
 #include "init/menu.h"
-#include "init/globals.h"
+#include "init/globals.h" 
 
 #define STAR_COUNT 300
 
@@ -14,7 +14,7 @@ typedef struct {
 
 } Star;
 
-
+MenuState currentMenuState = MAIN_MENU;
 Star stars[STAR_COUNT];
 int screenWidth = 1920;
 int screenHeight = 1080;
@@ -25,7 +25,11 @@ float spawnInterval = 0.02f; // seconds between spawns (adjust for faster/slower
 
 Texture2D starTextures[4];  // Array of star images
 
-bool shouldExit = false; // Global variable
+int shouldExit = 206; // Global variable
+bool block = false;
+bool soundOn = true;
+bool startGame = false;
+bool mode = true;
 
 int main() {
     
@@ -92,5 +96,6 @@ int main() {
     }
 
     CloseWindow();
+
     return 0;
 }
