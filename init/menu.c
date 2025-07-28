@@ -3,6 +3,7 @@
 #include "raylib.h"
 #include "globals.h"
 #include "game.h"
+#include <time.h>
 
 #define MAX_INPUT_CHARS 20
 char name[MAX_INPUT_CHARS + 1] = "\0"; // +1 for null terminator
@@ -236,6 +237,14 @@ int initializer() {
         for (int i = 0; i <= numRows; i++) {
             DrawLine(menuX + 250, menuY + 50 + (i * cellHeight), menuX + 250 + 400, menuY + 50 + (i * cellHeight), LIGHTGRAY);
         }
+
+        srand(time(NULL));
+        Color*** allBlocks = create_all_blocks();
+        int randomIndex = rand() % BLOCK_TYPES;
+        Color** currentBlock = allBlocks[randomIndex];
+
+        // Draw it on screen, for preview or game start
+        draw_block(currentBlock, menuX + 250, menuY + 50, cellWidth, cellHeight);  // Draw at grid (3, 0)
 
         if (IsKeyPressed(KEY_Q)) {
             passCount = 0;
