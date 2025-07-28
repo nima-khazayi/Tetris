@@ -30,16 +30,20 @@ bool block = false;
 bool soundOn = true;
 bool startGame = false;
 bool mode = true;
+bool enterance = true;
 
 int main() {
     
     InitWindow(screenWidth, screenHeight, "TeTRo");
+    InitAudioDevice();
     ToggleFullscreen();
 
     starTextures[0] = LoadTexture("templates/1.png");
     starTextures[1] = LoadTexture("templates/2.png");
     starTextures[2] = LoadTexture("templates/3.png");
     starTextures[3] = LoadTexture("templates/4.png");
+
+    Music music = LoadMusicStream("sounds/Tetris.mp3"); // Load music file
 
     for (int i = 0; i < STAR_COUNT; i++) {
         stars[i].active = false;
@@ -51,6 +55,17 @@ int main() {
 
         float deltaTime = GetFrameTime();
         spawnTimer += deltaTime;
+
+        if (enterance) {
+            PlayMusicStream(music); // Start playing
+            enterance = !enterance;
+        }
+
+        if (soundOn) {
+            UpdateMusicStream(music);
+        } else if (!soundOn) {
+            enterance = !enterance;
+        }
 
         // Spawn logic
         if (spawnTimer >= spawnInterval && activeStars < STAR_COUNT) {
@@ -95,6 +110,9 @@ int main() {
         UnloadTexture(starTextures[i]);
     }
 
+    UnloadMusicStream(music);
+
+    CloseAudioDevice();
     CloseWindow();
 
     return 0;
