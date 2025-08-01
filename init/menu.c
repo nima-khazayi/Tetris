@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "raylib.h"
 #include "globals.h"
 #include "game.h"
@@ -17,7 +18,11 @@ const int numCols = 10;
 const int cellWidth = 400 / numCols;
 const int cellHeight = 800 / numRows;
 
+int speed = 75;
+
 int initializer() {
+
+    float deltaTime = GetFrameTime();
 
     static MenuState currentMenuState = MAIN_MENU;
 
@@ -228,23 +233,11 @@ int initializer() {
         DrawText("Highest Score:", menuX + 50, menuY + 75, 21, BLACK);
         DrawText("Score:", menuX + 90, menuY + 275, 21, BLACK);
 
-        // Draw vertical lines
-        for (int i = 0; i <= numCols; i++) {
-            DrawLine(menuX + 250 + (i * cellWidth), menuY + 50, menuX + 250 + (i * cellWidth), menuY + 50 + 800, LIGHTGRAY);
-        }
-
-        // Draw horizontal lines
-        for (int i = 0; i <= numRows; i++) {
-            DrawLine(menuX + 250, menuY + 50 + (i * cellHeight), menuX + 250 + 400, menuY + 50 + (i * cellHeight), LIGHTGRAY);
-        }
-
         srand(time(NULL));
-        Color*** allBlocks = create_all_blocks();
-        int randomIndex = rand() % BLOCK_TYPES;
-        Color** currentBlock = allBlocks[randomIndex];
-
-        // Draw it on screen, for preview or game start
-        draw_block(currentBlock, menuX + 250, menuY + 50, cellWidth, cellHeight);  // Draw at grid (3, 0)
+        gridOffsetX = menuX + 250;
+        gridOffsetY = menuY + 50;
+        DrawNextTetromino(menuX + 675 + 20, menuY + 50 + 20);
+        UpdateTetris(deltaTime);
 
         if (IsKeyPressed(KEY_Q)) {
             passCount = 0;
