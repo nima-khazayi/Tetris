@@ -3,23 +3,27 @@
 
 #include "raylib.h"
 
-// Constants
-#define BLOCK_TYPES 7
+#define SCREEN_WIDTH 800
+#define SCREEN_HEIGHT 900
+#define GRID_WIDTH 10
+#define GRID_HEIGHT 20
+#define CELL_SIZE 40
 #define BLOCK_SIZE 4
+#define FALL_INTERVAL 0.5f
 
-// Allocate a 2D matrix of Color
-Color** allocate_matrix(int Rows, int Cols);
+extern const int TETROMINOS[7][4][4][4];
+extern Color TETROMINO_COLORS[7];
+extern int grid[GRID_HEIGHT][GRID_WIDTH];
+extern int gridOffsetX;
+extern int gridOffsetY; 
 
-// Free a 2D matrix of Color
-void free_matrix(Color** matrix, int Rows);
-
-// Generate all Tetris blocks
-Color*** create_all_blocks(void);
-
-// Draw a block at a grid position
-void draw_block(Color** block, int gridX, int gridY, int cellWidth, int cellHeight);
-
-// Game grid setup (placeholder)
-int grid(void);
+void DrawTetrisGrid();
+void DrawCurrentTetromino();
+void DrawNextTetromino(int previewX, int previewY);
+bool CheckCollision(int offsetX, int offsetY, int rotation);
+void LockTetromino();
+void SpawnTetromino();
+void ClearLines();
+void UpdateTetris(float dt);
 
 #endif // GAME_H
