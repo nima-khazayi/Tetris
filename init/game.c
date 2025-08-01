@@ -1,87 +1,195 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include "globals.h"
 #include "raylib.h"
+#include <stdlib.h>
+#include <time.h>
 
-#define BLOCK_TYPES 7
+#define SCREEN_WIDTH 800
+#define SCREEN_HEIGHT 900
+#define GRID_WIDTH 10
+#define GRID_HEIGHT 20
+#define CELL_SIZE 40
 #define BLOCK_SIZE 4
+#define FALL_INTERVAL 0.5f
 
-Color** allocate_matrix(int Rows, int Cols) {
-    Color** matrix = (Color**)malloc(Rows * sizeof(Color*));
-    for (int i = 0; i < Rows; i++) {
-        matrix[i] = (Color*)malloc(Cols * sizeof(Color));
-    }
-    return matrix;
-}
+// Define Tetrimino shapes
+const int TETROMINOS[7][4][4][4] = {
+    // I
+    {{{0,0,0,0},{1,1,1,1},{0,0,0,0},{0,0,0,0}},
+     {{0,0,1,0},{0,0,1,0},{0,0,1,0},{0,0,1,0}},
+     {{0,0,0,0},{1,1,1,1},{0,0,0,0},{0,0,0,0}},
+     {{0,1,0,0},{0,1,0,0},{0,1,0,0},{0,1,0,0}}},
+    // O
+    {{{0,0,0,0},{0,1,1,0},{0,1,1,0},{0,0,0,0}},
+     {{0,0,0,0},{0,1,1,0},{0,1,1,0},{0,0,0,0}},
+     {{0,0,0,0},{0,1,1,0},{0,1,1,0},{0,0,0,0}},
+     {{0,0,0,0},{0,1,1,0},{0,1,1,0},{0,0,0,0}}},
+    // T
+    {{{0,0,0,0},{1,1,1,0},{0,1,0,0},{0,0,0,0}},
+     {{0,0,1,0},{0,1,1,0},{0,0,1,0},{0,0,0,0}},
+     {{0,0,0,0},{0,1,0,0},{1,1,1,0},{0,0,0,0}},
+     {{0,1,0,0},{0,1,1,0},{0,1,0,0},{0,0,0,0}}},
+    // S
+    {{{0,0,0,0},{0,1,1,0},{1,1,0,0},{0,0,0,0}},
+     {{0,1,0,0},{0,1,1,0},{0,0,1,0},{0,0,0,0}},
+     {{0,0,0,0},{0,1,1,0},{1,1,0,0},{0,0,0,0}},
+     {{0,1,0,0},{0,1,1,0},{0,0,1,0},{0,0,0,0}}},
+    // Z
+    {{{0,0,0,0},{1,1,0,0},{0,1,1,0},{0,0,0,0}},
+     {{0,0,1,0},{0,1,1,0},{0,1,0,0},{0,0,0,0}},
+     {{0,0,0,0},{1,1,0,0},{0,1,1,0},{0,0,0,0}},
+     {{0,0,1,0},{0,1,1,0},{0,1,0,0},{0,0,0,0}}},
+    // J
+    {{{0,0,0,0},{1,0,0,0},{1,1,1,0},{0,0,0,0}},
+     {{0,1,1,0},{0,1,0,0},{0,1,0,0},{0,0,0,0}},
+     {{0,0,0,0},{1,1,1,0},{0,0,1,0},{0,0,0,0}},
+     {{0,1,0,0},{0,1,0,0},{1,1,0,0},{0,0,0,0}}},
+    // L
+    {{{0,0,0,0},{0,0,1,0},{1,1,1,0},{0,0,0,0}},
+     {{0,1,0,0},{0,1,0,0},{0,1,1,0},{0,0,0,0}},
+     {{0,0,0,0},{1,1,1,0},{1,0,0,0},{0,0,0,0}},
+     {{1,1,0,0},{0,1,0,0},{0,1,0,0},{0,0,0,0}}}
+};
 
-void free_matrix(int** matrix, int Rows) {
-    for (int i = 0; i < Rows; i++) {
-        free(matrix[i]);
-    }
-    free(matrix);
-}
+Color TETROMINO_COLORS[7] = { RED, ORANGE, PURPLE, GREEN, MAROON, BLUE, YELLOW };
 
-Color*** create_all_blocks() {
-    Color colors[8] = {BLACK, GREEN, RED, ORANGE, YELLOW, (Color){21, 204, 209, 255}, PURPLE, BLUE};
-    Color*** blocks = (Color***)malloc(BLOCK_TYPES * sizeof(Color**));
+int grid[GRID_HEIGHT][GRID_WIDTH] = {0};
 
-    for (int i = 0; i < BLOCK_TYPES; i++) {
-        blocks[i] = allocate_matrix(BLOCK_SIZE, BLOCK_SIZE);
-        for (int r = 0; r < BLOCK_SIZE; r++) {
-            for (int c = 0; c < BLOCK_SIZE; c++) {
-                blocks[i][r][c] = BLACK;
+int currentType = 0, currentRotation = 0, currentX = 3, currentY = 0;
+int nextType = 0;
+float fallTimer = 0.0f;
+
+int gridOffsetX = 0;
+int gridOffsetY = 0;
+
+void DrawTetrisGrid() {
+    for (int y = 0; y < GRID_HEIGHT; y++) {
+        for (int x = 0; x < GRID_WIDTH; x++) {
+            if (grid[y][x]) {
+                DrawRectangle(
+                    gridOffsetX + x * CELL_SIZE,
+                    gridOffsetY + y * CELL_SIZE,
+                    CELL_SIZE - 1, CELL_SIZE - 1,
+                    TETROMINO_COLORS[grid[y][x] - 1]
+                );
+            } else {
+                DrawRectangleLines(
+                    gridOffsetX + x * CELL_SIZE,
+                    gridOffsetY + y * CELL_SIZE,
+                    CELL_SIZE, CELL_SIZE,
+                    LIGHTGRAY
+                );
             }
         }
     }
-
-    // I Block
-    for (int i = 0; i < 4; i++) blocks[0][1][i] = colors[1];
-
-    // O Block
-    blocks[1][1][1] = colors[2]; blocks[1][1][2] = colors[2];
-    blocks[1][2][1] = colors[2]; blocks[1][2][2] = colors[2];
-
-    // T Block
-    blocks[2][0][1] = colors[5];
-    blocks[2][1][0] = colors[5]; blocks[2][1][1] = colors[5]; blocks[2][1][2] = colors[5];
-
-    // S Block
-    blocks[3][1][1] = colors[3]; blocks[3][1][2] = colors[3];
-    blocks[3][2][0] = colors[3]; blocks[3][2][1] = colors[3];
-
-    // Z Block
-    blocks[4][1][0] = colors[4]; blocks[4][1][1] = colors[4];
-    blocks[4][2][1] = colors[4]; blocks[4][2][2] = colors[4];
-
-    // J Block
-    blocks[5][0][0] = colors[6];
-    blocks[5][1][0] = colors[6]; blocks[5][1][1] = colors[6]; blocks[5][1][2] = colors[6];
-
-    // L Block
-    blocks[6][0][2] = colors[7];
-    blocks[6][1][0] = colors[7]; blocks[6][1][1] = colors[7]; blocks[6][1][2] = colors[7];
-
-    return blocks;
 }
 
-void draw_block(Color** block, int gridX, int gridY, int cellWidth, int cellHeight) {
-    for (int i = 1; i <= BLOCK_SIZE; i++) {
-        for (int j = 1; j <= BLOCK_SIZE; j++) {
-            if (!ColorIsEqual(block[i-1][j-1], BLACK)) {
-                DrawRectangle(gridX + (j * cellWidth), gridY + (i * cellHeight),
-                              cellWidth, cellHeight,
-                              block[i-1][j-1]);
+void DrawCurrentTetromino() {
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            if (TETROMINOS[currentType][currentRotation][i][j]) {
+                DrawRectangle(
+                    gridOffsetX + (currentX + j) * CELL_SIZE,
+                    gridOffsetY + (currentY + i) * CELL_SIZE,
+                    CELL_SIZE - 1, CELL_SIZE - 1,
+                    TETROMINO_COLORS[currentType]
+                );
             }
         }
     }
 }
 
-int grid() {
-    Color** A = allocate_matrix(numRows, numCols);
-    for (int i = 0; i < numRows; i++) {
-        for (int j = 0; j < numCols; j++) {
-            A[i][j] = BLACK;
+void DrawNextTetromino(int previewX, int previewY) {
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            if (TETROMINOS[nextType][0][i][j]) {
+                DrawRectangle(
+                    previewX + j * (CELL_SIZE),
+                    previewY + i * (CELL_SIZE),
+                    (CELL_SIZE) - 1, (CELL_SIZE) - 1,
+                    TETROMINO_COLORS[nextType]
+                );
+            }
         }
     }
-    return 0; // Placeholder, replace with actual game logic
+}
+
+bool CheckCollision(int offsetX, int offsetY, int rotation) {
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            if (TETROMINOS[currentType][rotation][i][j]) {
+                int x = currentX + j + offsetX;
+                int y = currentY + i + offsetY;
+
+                if (x < 0 || x >= GRID_WIDTH || y >= GRID_HEIGHT) return true;
+                if (y >= 0 && grid[y][x]) return true;
+            }
+        }
+    }
+    return false;
+}
+
+void LockTetromino() {
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            if (TETROMINOS[currentType][currentRotation][i][j]) {
+                int x = currentX + j;
+                int y = currentY + i;
+                if (y >= 0) grid[y][x] = currentType + 1;
+            }
+        }
+    }
+}
+
+void SpawnTetromino() {
+    currentType = nextType;
+    nextType = GetRandomValue(0, 6);
+    currentRotation = 0;
+    currentX = 3;
+    currentY = 0;
+}
+
+void ClearLines() {
+    for (int i = GRID_HEIGHT - 1; i >= 0; i--) {
+        bool full = true;
+        for (int j = 0; j < GRID_WIDTH; j++) {
+            if (!grid[i][j]) {
+                full = false;
+                break;
+            }
+        }
+        if (full) {
+            for (int k = i; k > 0; k--) {
+                for (int j = 0; j < GRID_WIDTH; j++) {
+                    grid[k][j] = grid[k - 1][j];
+                }
+            }
+            for (int j = 0; j < GRID_WIDTH; j++) grid[0][j] = 0;
+            i++; // re-check current row
+        }
+    }
+}
+
+void UpdateTetris(float dt) {
+    fallTimer += dt;
+
+    if (IsKeyPressed(KEY_LEFT) && !CheckCollision(-1, 0, currentRotation)) currentX--;
+    if (IsKeyPressed(KEY_RIGHT) && !CheckCollision(1, 0, currentRotation)) currentX++;
+    if (IsKeyPressed(KEY_UP)) {
+        int nextRotation = (currentRotation + 1) % 4;
+        if (!CheckCollision(0, 0, nextRotation)) currentRotation = nextRotation;
+    }
+    if (IsKeyPressed(KEY_DOWN) && !CheckCollision(0, 1, currentRotation)) currentY++;
+
+    if (fallTimer >= FALL_INTERVAL) {
+        if (!CheckCollision(0, 1, currentRotation)) {
+            currentY++;
+        } else {
+            LockTetromino();
+            ClearLines();
+            SpawnTetromino();
+        }
+        fallTimer = 0;
+    }
+
+    DrawTetrisGrid();
+    DrawCurrentTetromino();
 }
