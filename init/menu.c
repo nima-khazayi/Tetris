@@ -5,6 +5,8 @@
 #include "globals.h"
 #include "game.h"
 #include <time.h>
+#include <sqlite3.h>
+#include <ctype.h>
 
 #define MAX_INPUT_CHARS 20
 char name[MAX_INPUT_CHARS + 1] = "\0"; // +1 for null terminator
@@ -18,11 +20,230 @@ const int numCols = 10;
 const int cellWidth = 400 / numCols;
 const int cellHeight = 800 / numRows;
 
-int speed = 75;
+int speed = 1;
+int point = 0;
+
+// Global variables for authentication state
+int authError = 0; // 0: no error, 1: wrong password, 2: database error
+int userHighestScore = 0;
+int currentUserID = -1; // Store current user's database ID
+
+// Function to trim whitespace from strings
+void trim(char* str) {
+    char* end;
+
+    // Trim leading space
+    while (isspace((unsigned char)*str)) str++;
+    if (*str == 0) return; // All spaces?
+
+    // Trim trailing space
+    end = str + strlen(str) - 1;
+    while (end > str && isspace((unsigned char)*end)) end--;
+
+    // Null terminate
+    *(end + 1) = 0;
+}
+
+// Initialize database and create users table if it doesn't exist
+int initializeDatabase() {
+    sqlite3* db;
+    char* errMsg = 0;
+    const char* sql = "CREATE TABLE IF NOT EXISTS users ("
+                     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                     "username TEXT UNIQUE NOT NULL,"
+                     "password TEXT NOT NULL,"
+                     "highest_score INTEGER DEFAULT 0,"
+                     "created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                     "last_login DATETIME DEFAULT CURRENT_TIMESTAMP);";
+    
+    const char* index_sql = "CREATE INDEX IF NOT EXISTS idx_username ON users(username);";
+    
+    int rc = sqlite3_open("database/users.db", &db);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+        return -1;
+    }
+    
+    // Execute SQL statements
+    rc = sqlite3_exec(db, sql, 0, 0, &errMsg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        sqlite3_close(db);
+        return -1;
+    }
+
+    rc = sqlite3_exec(db, index_sql, 0, 0, &errMsg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        sqlite3_close(db);
+        return -1;
+    }
+
+    sqlite3_close(db);
+    return 0;
+}
+
+// Authenticate or register user in database
+int authenticateUser(const char* username, const char* password) {
+    sqlite3* db;
+    sqlite3_stmt* stmt;
+    const char* select_sql = "SELECT id, password, highest_score FROM users WHERE username = ?";
+    const char* insert_sql = "INSERT INTO users (username, password, highest_score) VALUES (?, ?, 0)";
+    const char* update_login_sql = "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?";
+    
+    // Trim input
+    char trimmed_username[MAX_INPUT_CHARS + 1];
+    char trimmed_password[MAX_INPUT_CHARS + 1];
+    strcpy(trimmed_username, username);
+    strcpy(trimmed_password, password);
+    trim(trimmed_username);
+    trim(trimmed_password);
+
+    if (initializeDatabase() != 0) {
+        return -2; // Database initialization error
+    }
+
+    int rc = sqlite3_open("database/users.db", &db);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+        return -2; // Database connection error
+    }
+    
+    // Prepare SQL statement to find existing user
+    rc = sqlite3_prepare_v2(db, select_sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return -2; // SQL preparation error
+    }
+
+    sqlite3_bind_text(stmt, 1, trimmed_username, -1, SQLITE_STATIC);
+    rc = sqlite3_step(stmt);
+
+    if (rc == SQLITE_ROW) {
+        // User exists, check password
+        currentUserID = sqlite3_column_int(stmt, 0);
+        const char* stored_password = (const char*)sqlite3_column_text(stmt, 1);
+        userHighestScore = sqlite3_column_int(stmt, 2);
+
+        // Debug output
+        printf("Stored password: %s\n", stored_password);
+        printf("Input password: %s\n", trimmed_password);
+
+        if (strcmp(trimmed_password, stored_password) == 0) {
+            // Update last login timestamp
+            sqlite3_finalize(stmt);
+            rc = sqlite3_prepare_v2(db, update_login_sql, -1, &stmt, NULL);
+            if (rc == SQLITE_OK) {
+                sqlite3_bind_int(stmt, 1, currentUserID);
+                sqlite3_step(stmt);
+                sqlite3_finalize(stmt);
+            }
+            sqlite3_close(db);
+            return 0; // Successful login
+        } else {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return -1; // Wrong password
+        }
+    } else if (rc == SQLITE_DONE) {
+        // User doesn't exist, create new user
+        sqlite3_finalize(stmt);
+
+        rc = sqlite3_prepare_v2(db, insert_sql, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "SQL error: %s\n", sqlite3_errmsg(db));
+            sqlite3_close(db);
+            return -2; // SQL preparation error
+        }
+
+        sqlite3_bind_text(stmt, 1, trimmed_username, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, trimmed_password, -1, SQLITE_STATIC);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc == SQLITE_DONE) {
+            userHighestScore = 0; // New user starts with 0 score
+            currentUserID = (int)sqlite3_last_insert_rowid(db);
+            sqlite3_close(db);
+            return 1; // New user registered successfully
+        } else {
+            sqlite3_close(db);
+            return -2; // Database error
+        }
+    } else {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -2; // Database error
+    }
+}
+
+// Update user's highest score in database
+int updateHighestScore(const char* username, int newScore) {
+    sqlite3* db;
+    sqlite3_stmt* stmt;
+    const char* select_sql = "SELECT highest_score FROM users WHERE username = ?";
+    const char* update_sql = "UPDATE users SET highest_score = ? WHERE username = ?";
+
+    int rc = sqlite3_open("database/users.db", &db);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+        return -1; // Database connection error
+    }
+
+    // Check current highest score
+    rc = sqlite3_prepare_v2(db, select_sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return -1; // SQL preparation error
+    }
+
+    sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
+    rc = sqlite3_step(stmt);
+
+    if (rc == SQLITE_ROW) {
+        int currentHighest = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+
+        // Only update if new score is higher
+        if (newScore > currentHighest) {
+            rc = sqlite3_prepare_v2(db, update_sql, -1, &stmt, NULL);
+            if (rc != SQLITE_OK) {
+                fprintf(stderr, "SQL error: %s\n", sqlite3_errmsg(db));
+                sqlite3_close(db);
+                return -1; // SQL preparation error
+            }
+
+            sqlite3_bind_int(stmt, 1, newScore);
+            sqlite3_bind_text(stmt, 2, username, -1, SQLITE_STATIC);
+
+            rc = sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+
+            if (rc == SQLITE_DONE) {
+                userHighestScore = newScore;
+                return 0; // Successfully updated
+            }
+        } else {
+            sqlite3_close(db);
+            return 0; // No update needed
+        }
+    } else {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+    }
+
+    return -1; // Error or user not found
+}
 
 int initializer() {
 
-    float deltaTime = GetFrameTime();
+    float deltaTime = GetFrameTime() * speed;
 
     static MenuState currentMenuState = MAIN_MENU;
 
@@ -115,10 +336,12 @@ int initializer() {
                 DrawRectangle(menuX + 260, menuY + 440, 280, 70, LIGHTGRAY);
                 DrawRectangleRec(rec4, (Color) {80, 80, 80, 130});
                 DrawText("Mode < Easy >", menuX + 300, menuY + 460, 30, BLACK);
+                speed = 1;
             } else {
                 DrawRectangle(menuX + 260, menuY + 440, 280, 70, LIGHTGRAY);
                 DrawRectangleRec(rec4, (Color) {80, 80, 80, 130});
                 DrawText("Mode < Hard >", menuX + 300, menuY + 460, 30, BLACK);
+                speed = 2.5;
             }
         }
     }
@@ -138,16 +361,20 @@ int initializer() {
 
         if (!block) {
             // Type in username blank space
-            DrawText(strcat(name, "[]"), menuX + 265, menuY + 155, 30, GRAY);
-            DrawText("*********", menuX + 265, menuY + 225, 30, GRAY);
+            char tempName[MAX_INPUT_CHARS + 3];
+            strcpy(tempName, name);
+            strcat(tempName, "_");
+            DrawText(tempName, menuX + 265, menuY + 155, 30, BLACK);
+            
+            // Show password field as inactive
+            DrawText("Enter username first...", menuX + 265, menuY + 225, 20, GRAY);
+            
             int alpha = GetCharPressed();
             if ((alpha >= 32) && (alpha <= 126) && (letterCount < MAX_INPUT_CHARS))
             {
                 name[letterCount] = (char)alpha;
                 letterCount++;
             }
-
-            alpha = GetCharPressed(); // Get next character from queue
 
             if (IsKeyPressed(KEY_BACKSPACE))
             {
@@ -158,21 +385,31 @@ int initializer() {
             }
             name[letterCount] = '\0'; // Null-terminate the string
 
-            if (IsKeyPressed(KEY_ENTER)) {
-                block = !block;
+            if (IsKeyPressed(KEY_ENTER) && strlen(name) >= 2) {
+                block = true;
+                authError = 0; // Clear any previous password errors
             }
 
         } else {
-            DrawText(name, menuX + 265, menuY + 155, 30, GRAY);
-            DrawText(strcat(pass, "[]"), menuX + 265, menuY + 225, 30, GRAY);
+            // Show username (read-only now)
+            DrawText(name, menuX + 265, menuY + 155, 30, BLACK);
+            
+            // Show password input with cursor
+            char tempPass[MAX_INPUT_CHARS + 3];
+            strcpy(tempPass, "");
+            // Display asterisks for password
+            for (int i = 0; i < passCount; i++) {
+                strcat(tempPass, "*");
+            }
+            strcat(tempPass, "_");
+            DrawText(tempPass, menuX + 265, menuY + 225, 30, BLACK);
+            
             int alpha = GetCharPressed();
             if ((alpha >= 32) && (alpha <= 126) && (passCount < MAX_INPUT_CHARS))
             {
                 pass[passCount] = (char)alpha;
                 passCount++;
             }
-
-            alpha = GetCharPressed(); // Get next character from queue
 
             if (IsKeyPressed(KEY_BACKSPACE))
             {
@@ -187,15 +424,48 @@ int initializer() {
                 block = !block;
 
                 if (strlen(name) >= 2 && strlen(pass) >= 2) {
+                    int result = authenticateUser(name, pass);
+                
+                if (result == 0) {
+                    // Successful login - existing user
                     currentMenuState = GAME;
+                    authError = 0;
+                } else if (result == 1) {
+                    // Successful registration - new user
+                    currentMenuState = GAME;
+                    authError = 0;
+                } else if (result == -1) {
+                    // Wrong password - clear password field and show error
+                    authError = 1;
+                    memset(pass, 0, sizeof(pass));
+                    passCount = 0;
+                    // Stay in password input mode
+                } else {
+                    // Database error
+                    authError = 2;
+                    memset(pass, 0, sizeof(pass));
+                    passCount = 0;
+                }
+
                 }
             }
         }
 
-        if (!(strlen(name) >= 2 && strlen(pass) >= 2)) {
-            DrawText("Fill The Blanks With 2 Or More Characters", menuX + 260, menuY + 280, 20, RED);
+        // Display error messages and instructions
+        if (authError == 1) {
+            DrawText("Incorrect password! Please try again.", menuX + 260, menuY + 280, 20, RED);
+        } else if (authError == 2) {
+            DrawText("Database error! Please try again later.", menuX + 260, menuY + 280, 20, RED);
+        } else if (!block && strlen(name) < 2) {
+            DrawText("Username must be at least 2 characters", menuX + 260, menuY + 280, 20, ORANGE);
+        } else if (block && strlen(pass) < 2) {
+            DrawText("Password must be at least 2 characters", menuX + 260, menuY + 280, 20, ORANGE);
+        } else if (block) {
+            DrawText("New users will be registered automatically", menuX + 260, menuY + 280, 20, GREEN);
         }
-        DrawText("Press Q to go back", menuX + 260, menuY + 300, 20, DARKGRAY);
+        
+        DrawText("Press Q to go back | Use ENTER to proceed", menuX + 260, menuY + 310, 18, DARKGRAY);
+        DrawText("Use UP/DOWN to switch between fields", menuX + 260, menuY + 330, 18, DARKGRAY);
 
         if (IsKeyPressed(KEY_UP) | IsKeyPressed(KEY_DOWN)) {
             block = !block;
@@ -231,7 +501,13 @@ int initializer() {
         DrawRectangleLinesEx(rec, 3.0f, RED);
         DrawText("Next Puzzle", menuX + 680, menuY + 260, 19, BLACK);
         DrawText("Highest Score:", menuX + 50, menuY + 75, 21, BLACK);
+        char highScoreText[32];
+        sprintf(highScoreText, "%d", userHighestScore);
+        DrawText(highScoreText, menuX + 75, menuY + 100, 25, BLACK);
         DrawText("Score:", menuX + 90, menuY + 275, 21, BLACK);
+        char Score[32];
+        sprintf(Score, "%d", point);
+        DrawText(Score, menuX + 115, menuY + 300, 25, BLACK);
 
         srand(time(NULL));
         gridOffsetX = menuX + 250;
@@ -239,9 +515,23 @@ int initializer() {
         DrawNextTetromino(menuX + 675 + 20, menuY + 50 + 20);
         UpdateTetris(deltaTime);
 
+        if (gameOver) {
+            // Show game over screen
+            DrawText("Game Over!", menuX + 300, menuY + 250, 20, RED);
+            DrawText("Press R to Restart", menuX + 300, menuY + 290, 20, LIGHTGRAY);
+
+            if (IsKeyPressed(KEY_R)) {
+                gameOver = false; // Reset game over flag
+                updateHighestScore(name, point);
+                startNewGame();   // Restart the game
+            }
+        }
+
         if (IsKeyPressed(KEY_Q)) {
+            updateHighestScore(name, point);
             passCount = 0;
             letterCount = 0;
+            startNewGame(); // Reset game state
             currentMenuState = MAIN_MENU;
         }
     }

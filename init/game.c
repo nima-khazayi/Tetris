@@ -1,6 +1,8 @@
 #include "raylib.h"
 #include <stdlib.h>
 #include <time.h>
+#include "globals.h"
+#include <string.h>
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 900
@@ -9,6 +11,8 @@
 #define CELL_SIZE 40
 #define BLOCK_SIZE 4
 #define FALL_INTERVAL 0.5f
+
+bool gameOver = false; // Flag to indicate if the game is over
 
 // Define Tetrimino shapes
 const int TETROMINOS[7][4][4][4] = {
@@ -82,6 +86,26 @@ void DrawTetrisGrid() {
     }
 }
 
+void resetGameState() {
+    // Reset grid
+    memset(grid, 0, sizeof(grid));
+
+    // Reset current tetromino
+    currentType = 0;
+    currentRotation = 0;
+    currentX = 3;
+    currentY = 0;
+
+    // Reset next tetromino
+    nextType = GetRandomValue(0, 6);
+
+    // Reset timer
+    fallTimer = 0.0f;
+
+    // Reset score or other game variables if needed
+    point = 0; // Reset points
+}
+
 void DrawCurrentTetromino() {
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
@@ -145,9 +169,15 @@ void SpawnTetromino() {
     currentRotation = 0;
     currentX = 3;
     currentY = 0;
+
+    // Check if the new tetromino collides immediately
+    if (CheckCollision(0, 0, currentRotation)) {
+        gameOver = true; // Set game over flag
+    }
 }
 
 void ClearLines() {
+    int counter = 0;
     for (int i = GRID_HEIGHT - 1; i >= 0; i--) {
         bool full = true;
         for (int j = 0; j < GRID_WIDTH; j++) {
@@ -164,11 +194,30 @@ void ClearLines() {
             }
             for (int j = 0; j < GRID_WIDTH; j++) grid[0][j] = 0;
             i++; // re-check current row
+            counter++;
         }
     }
+
+    if (counter == 1) {
+        point += 40;
+    } else if (counter == 2) {
+        point += 100;
+    } else if (counter == 3) {
+        point += 300;
+    } else if (counter >= 4) {
+        point += 1200;
+    }
+
+    counter = 0;
 }
 
 void UpdateTetris(float dt) {
+
+    if (gameOver) {
+        // Handle game over logic, such as showing a menu
+        return; // Exit the update to prevent further actions
+    }
+    
     fallTimer += dt;
 
     if (IsKeyPressed(KEY_LEFT) && !CheckCollision(-1, 0, currentRotation)) currentX--;
@@ -192,4 +241,9 @@ void UpdateTetris(float dt) {
 
     DrawTetrisGrid();
     DrawCurrentTetromino();
+}
+
+void startNewGame() {
+    resetGameState(); // Reset game state when starting a new game
+    SpawnTetromino(); // Spawn the first tetromino
 }

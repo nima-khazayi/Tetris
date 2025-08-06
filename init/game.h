@@ -15,7 +15,8 @@ extern const int TETROMINOS[7][4][4][4];
 extern Color TETROMINO_COLORS[7];
 extern int grid[GRID_HEIGHT][GRID_WIDTH];
 extern int gridOffsetX;
-extern int gridOffsetY; 
+extern int gridOffsetY;
+extern bool gameOver;
 
 void DrawTetrisGrid();
 void DrawCurrentTetromino();
@@ -25,5 +26,6 @@ void LockTetromino();
 void SpawnTetromino();
 void ClearLines();
 void UpdateTetris(float dt);
+void startNewGame();
 
 #endif // GAME_H
