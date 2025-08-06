@@ -1,0 +1,19 @@
+# Requirements for Tetris Game Project
+
+# Raylib for graphics and game development
+raylib
+
+# SQLite for database management
+libsqlite3-dev
+
+# Development tools for compiling C code
+build-essential
+
+# C compiler
+gcc
+
+# C++ compiler (if needed)
+g++
+
+# Additional libraries
+libopenal-dev  # Optional sound library if used (for audio)
