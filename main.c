@@ -26,11 +26,13 @@ float spawnInterval = 0.02f; // seconds between spawns (adjust for faster/slower
 Texture2D starTextures[4];  // Array of star images
 
 int shouldExit = 206; // Global variable
+int posX = 0;
 bool block = false;
 bool soundOn = true;
 bool startGame = false;
 bool mode = true;
 bool enterance = true;
+bool init = false;
 
 int main() {
     
